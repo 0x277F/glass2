@@ -6,18 +6,21 @@ import lc.hex.irc.glass2.api.event.EventBus;
 import lc.hex.irc.glass2.api.event.IRCMessageEvent;
 import lc.hex.irc.glass2.api.event.Subscribe;
 import lc.hex.irc.glass2.core.net.G2DownstreamProxyFibre;
+import org.apache.logging.log4j.Logger;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
 @Singleton
 public class G2CoreEventHandler {
-    private static final String AUTH_DELIM = "\u241F";
+    private static final String AUTH_DELIM = "-";
+    private Logger logger;
     private EventBus eventBus;
     private String pass;
 
     @Inject
-    public G2CoreEventHandler(EventBus eventBus) {
+    public G2CoreEventHandler(Logger logger, EventBus eventBus) {
+        this.logger = logger;
         this.eventBus = eventBus;
     }
 
@@ -25,9 +28,10 @@ public class G2CoreEventHandler {
     public void onInboundDownstreamMessage(IRCMessageEvent.Inbound event) {
         IRCLine line = event.getLine();
         if (event.getSide() == IRCMessageEvent.Side.DOWNSTREAM) {
+            logger.trace("start processing downstream: " + event.getLine().toString());
             G2DownstreamProxyFibre fibre = ((G2DownstreamProxyFibre) event.getFibre());
             if (line.getCommand().equalsIgnoreCase("PASS")) {
-                String[] split = pass.split(AUTH_DELIM);
+                String[] split = event.getLine().getParams().get(0).split(AUTH_DELIM);
                 if (split.length < 2) {
                     fibre.writeAndFlush(IRCLine.proxyNotice("Insufficient parameters to PASS:"));
                     fibre.writeAndFlush(IRCLine.proxyNotice("PASS: usage: /PASS <server> [+]<port> <pass> with spaces representing unit separators."));

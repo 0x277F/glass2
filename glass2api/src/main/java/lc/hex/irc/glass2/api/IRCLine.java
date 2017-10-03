@@ -1,5 +1,6 @@
 package lc.hex.irc.glass2.api;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -8,7 +9,7 @@ import java.util.stream.Collectors;
 public class IRCLine {
     private String prefix;
     private String command;
-    private List<String> params;
+    private List<String> params = new ArrayList<>();
     private String trailing;
     private boolean numeric;
 
@@ -91,11 +92,12 @@ public class IRCLine {
             prefix = split[0].substring(1);
             i++;
         }
-        command = split[++i];
-        for (int j = i; j < split.length; j++) {
+        command = split[i];
+        for (int j = ++i; j < split.length; j++) {
             String s = split[j];
             if (s.startsWith(":")) {
                 trailing = Arrays.stream(Arrays.copyOfRange(split, j, split.length)).collect(Collectors.joining(" "));
+                break;
             } else {
                 params.add(s);
             }

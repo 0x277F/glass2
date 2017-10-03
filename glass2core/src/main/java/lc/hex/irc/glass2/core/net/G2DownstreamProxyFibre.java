@@ -11,7 +11,6 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import lc.hex.irc.glass2.api.IRCLine;
 import lc.hex.irc.glass2.api.IRCProxyFibre;
-import lc.hex.irc.glass2.api.event.DownstreamInitEvent;
 import lc.hex.irc.glass2.api.event.EventBus;
 import lc.hex.irc.glass2.api.event.IRCMessageEvent;
 import org.apache.logging.log4j.Logger;
@@ -30,7 +29,7 @@ public class G2DownstreamProxyFibre extends MessageToMessageCodec<IRCLine, IRCLi
     private SslContext sslContext;
 
     @Inject
-    private G2DownstreamProxyFibre(Logger logger, G2ProxyServer proxyServer, EventBus eventBus, G2UpstreamProxyFibre.Factory factory) {
+    public G2DownstreamProxyFibre(Logger logger, G2ProxyServer proxyServer, EventBus eventBus, G2UpstreamProxyFibre.Factory factory) {
         this.logger = logger;
         this.proxyServer = proxyServer;
         this.eventBus = eventBus;
@@ -38,7 +37,7 @@ public class G2DownstreamProxyFibre extends MessageToMessageCodec<IRCLine, IRCLi
         try {
             this.sslContext = SslContextBuilder.forClient().build();
         } catch (SSLException e) {
-            logger.throwing(e);
+            this.logger.throwing(e);
         }
     }
 
@@ -46,7 +45,7 @@ public class G2DownstreamProxyFibre extends MessageToMessageCodec<IRCLine, IRCLi
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         super.handlerAdded(ctx);
         this.downstream = ctx.channel();
-        eventBus.post(new DownstreamInitEvent(this));
+        logger.trace("channelActive");
     }
 
     @Override
@@ -78,7 +77,10 @@ public class G2DownstreamProxyFibre extends MessageToMessageCodec<IRCLine, IRCLi
     @Override
     protected void decode(ChannelHandlerContext ctx, IRCLine msg, List<Object> out) throws Exception {
         eventBus.post(new IRCMessageEvent.Inbound(IRCMessageEvent.Side.DOWNSTREAM, msg, this));
-        out.add(msg);
+        if (upstream != null) {
+            logger.trace("--> " + msg.toString());
+            upstream.writeAndFlush(msg);
+        }
     }
 
     @Override
@@ -93,14 +95,18 @@ public class G2DownstreamProxyFibre extends MessageToMessageCodec<IRCLine, IRCLi
 
     public ChannelFuture synchronizeUpstream(String host, int port, boolean ssl) {
         Bootstrap bootstrap = new Bootstrap();
-        return bootstrap.group(proxyServer.getChildLoop()).channel(NioSocketChannel.class).handler(factory.create(this)).connect(host, port).addListener((ChannelFutureListener) f -> {
+        return bootstrap.group(proxyServer.getChildLoop())
+                .channel(NioSocketChannel.class)
+                .handler(factory.create(this))
+                .connect(host, port)
+                .addListener((ChannelFutureListener) f -> {
             if (f.isSuccess()) {
                 logger.info("Successfully synchronized to " + host + ":" + port);
                 Channel channel = f.channel();
                 G2UpstreamProxyFibre upstreamFibre = channel.pipeline().get(G2UpstreamProxyFibre.class);
                 this.upstream = upstreamFibre.getUpstream();
                 if (ssl) {
-                    channel.pipeline().addAfter("line-enc", "ssl", sslContext.newHandler(channel.alloc()));
+                    channel.pipeline().addBefore("line-dec", "ssl", sslContext.newHandler(channel.alloc()));
                 }
             } else {
                 writeAndFlush(IRCLine.proxyNotice("Error connecting to server, please check your logs."));

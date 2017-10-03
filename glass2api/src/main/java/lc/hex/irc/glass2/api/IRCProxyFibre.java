@@ -14,8 +14,4 @@ public interface IRCProxyFibre {
     Channel getDownstream();
 
     Channel getUpstream();
-
-    public interface Factory {
-        IRCProxyFibre create();
-    }
 }
