@@ -7,8 +7,6 @@ import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.MessageToMessageCodec;
-import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslContextBuilder;
 import lc.hex.irc.glass2.api.IRCLine;
 import lc.hex.irc.glass2.api.IRCProxyFibre;
 import lc.hex.irc.glass2.api.event.EventBus;
@@ -16,7 +14,6 @@ import lc.hex.irc.glass2.api.event.IRCMessageEvent;
 import org.apache.logging.log4j.Logger;
 
 import javax.inject.Inject;
-import javax.net.ssl.SSLException;
 import java.util.List;
 
 public class G2DownstreamProxyFibre extends MessageToMessageCodec<IRCLine, IRCLine> implements IRCProxyFibre {
@@ -25,8 +22,8 @@ public class G2DownstreamProxyFibre extends MessageToMessageCodec<IRCLine, IRCLi
     private G2ProxyServer proxyServer;
     private EventBus eventBus;
     private G2UpstreamProxyFibre.Factory factory;
-    private Channel downstream, upstream;
-    private SslContext sslContext;
+    private Channel downstream;
+    private G2UpstreamProxyFibre upstream;
 
     @Inject
     public G2DownstreamProxyFibre(Logger logger, G2ProxyServer proxyServer, EventBus eventBus, G2UpstreamProxyFibre.Factory factory) {
@@ -34,11 +31,6 @@ public class G2DownstreamProxyFibre extends MessageToMessageCodec<IRCLine, IRCLi
         this.proxyServer = proxyServer;
         this.eventBus = eventBus;
         this.factory = factory;
-        try {
-            this.sslContext = SslContextBuilder.forClient().build();
-        } catch (SSLException e) {
-            this.logger.throwing(e);
-        }
     }
 
     @Override
@@ -90,24 +82,30 @@ public class G2DownstreamProxyFibre extends MessageToMessageCodec<IRCLine, IRCLi
 
     @Override
     public Channel getUpstream() {
-        return upstream;
+        return upstream.getUpstream();
+    }
+
+    public void setUpstream(G2UpstreamProxyFibre fibre) {
+        this.upstream = fibre;
+    }
+
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        if (upstream != null && upstream.getUpstream().isOpen()) {
+            upstream.getUpstream().close();
+        }
     }
 
     public ChannelFuture synchronizeUpstream(String host, int port, boolean ssl) {
+        G2UpstreamProxyFibre.Initializer initializer = new G2UpstreamProxyFibre.Initializer(this, ssl, logger, factory);
         Bootstrap bootstrap = new Bootstrap();
         return bootstrap.group(proxyServer.getChildLoop())
                 .channel(NioSocketChannel.class)
-                .handler(factory.create(this))
+                .handler(initializer)
                 .connect(host, port)
                 .addListener((ChannelFutureListener) f -> {
             if (f.isSuccess()) {
                 logger.info("Successfully synchronized to " + host + ":" + port);
-                Channel channel = f.channel();
-                G2UpstreamProxyFibre upstreamFibre = channel.pipeline().get(G2UpstreamProxyFibre.class);
-                this.upstream = upstreamFibre.getUpstream();
-                if (ssl) {
-                    channel.pipeline().addBefore("line-dec", "ssl", sslContext.newHandler(channel.alloc()));
-                }
             } else {
                 writeAndFlush(IRCLine.proxyNotice("Error connecting to server, please check your logs."));
                 logger.throwing(f.cause());

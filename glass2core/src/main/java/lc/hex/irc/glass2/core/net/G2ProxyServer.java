@@ -1,14 +1,16 @@
 package lc.hex.irc.glass2.core.net;
 
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOutboundHandlerAdapter;
+import io.netty.channel.ChannelPromise;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.LineBasedFrameDecoder;
-import io.netty.handler.codec.string.LineEncoder;
-import io.netty.handler.codec.string.LineSeparator;
 import io.netty.handler.codec.string.StringDecoder;
+import io.netty.handler.codec.string.StringEncoder;
 import lc.hex.irc.glass2.api.ProxyServer;
 import lc.hex.irc.glass2.api.event.EventBus;
 import lc.hex.irc.glass2.core.G2CoreEventHandler;
@@ -29,7 +31,7 @@ public class G2ProxyServer extends ChannelInitializer<SocketChannel> implements 
         this.logger = logger;
         this.eventBus = eventBus;
         this.factory = factory;
-        this.serverLoop = new NioEventLoopGroup(3);
+        this.serverLoop = new NioEventLoopGroup(1);
         this.childLoop = new NioEventLoopGroup(4);
         eventBus.subscribe(eventHandler);
     }
@@ -60,9 +62,17 @@ public class G2ProxyServer extends ChannelInitializer<SocketChannel> implements 
         logger.trace("Initializing socket channel " + ch.remoteAddress().getHostName());
         ch.pipeline().addLast("frame_dec", new LineBasedFrameDecoder(1024))
                 .addLast("str_dec", new StringDecoder())
-                .addLast("irc_cod", new IRCCodec(logger))
+                .addLast("irc_dec", new IRCDecoder())
                 .addLast("irc_hlr", new G2DownstreamProxyFibre(logger, this, eventBus, factory))
-                .addLast("line_enc", new LineEncoder(LineSeparator.WINDOWS));
+                .addLast("irc_enc", new IRCEncoder())
+                .addLast(new ChannelOutboundHandlerAdapter() {
+                    @Override
+                    public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+                        System.out.println(msg.getClass().getName() + " " + msg);
+                        super.write(ctx, msg.toString(), promise);
+                    }
+                })
+                .addLast("str_enc", new StringEncoder());
         logger.trace("Established pipeline for channel " + ch.remoteAddress().getHostName());
     }
 

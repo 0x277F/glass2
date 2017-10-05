@@ -3,43 +3,44 @@ package lc.hex.irc.glass2.core.net;
 import com.google.inject.assistedinject.Assisted;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInitializer;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.LineBasedFrameDecoder;
-import io.netty.handler.codec.MessageToMessageCodec;
-import io.netty.handler.codec.string.LineEncoder;
-import io.netty.handler.codec.string.LineSeparator;
 import io.netty.handler.codec.string.StringDecoder;
+import io.netty.handler.codec.string.StringEncoder;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
 import lc.hex.irc.glass2.api.IRCLine;
 import lc.hex.irc.glass2.api.IRCProxyFibre;
 import lc.hex.irc.glass2.api.event.EventBus;
-import lc.hex.irc.glass2.api.event.IRCMessageEvent;
 import org.apache.logging.log4j.Logger;
 
 import javax.inject.Inject;
-import java.util.List;
+import javax.net.ssl.SSLException;
 
 public class G2UpstreamProxyFibre extends SimpleChannelInboundHandler<IRCLine> implements IRCProxyFibre {
 
     private Logger logger;
     private EventBus eventBus;
-    private G2DownstreamProxyFibre downstreamFibre;
-    private Channel upstream, downstream;
+    private Channel upstream;
+    private G2DownstreamProxyFibre downstream;
+    private boolean ssl;
+    private static SslContext sslContext;
 
-    @Inject
-    public G2UpstreamProxyFibre(Logger logger, EventBus eventBus, @Assisted G2DownstreamProxyFibre downstreamFibre) {
-        this.logger = logger;
-        this.eventBus = eventBus;
-        this.downstreamFibre = downstreamFibre;
-        this.downstream = downstreamFibre.getDownstream();
+    static {
+        try {
+            sslContext = SslContextBuilder.forClient().build();
+        } catch (SSLException e) {
+            e.printStackTrace();
+        }
     }
 
-    @Override
-    public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
-        ctx.channel().pipeline()
-                .addLast("line-dec", new LineBasedFrameDecoder(1024))
-                .addLast("str-dec", new StringDecoder())
-                .addLast("irc-cod", new IRCCodec(logger))
-                .addLast("line-enc", new LineEncoder(LineSeparator.WINDOWS));
+    @Inject
+    public G2UpstreamProxyFibre(Logger logger, EventBus eventBus, @Assisted G2DownstreamProxyFibre downstreamFibre, @Assisted boolean ssl) {
+        this.logger = logger;
+        this.eventBus = eventBus;
+        this.downstream = downstreamFibre;
+        this.ssl = ssl;
     }
 
     @Override
@@ -69,12 +70,12 @@ public class G2UpstreamProxyFibre extends SimpleChannelInboundHandler<IRCLine> i
 
     @Override
     public Channel getDownstream() {
-        return upstream;
+        return downstream.getDownstream();
     }
 
     @Override
     public Channel getUpstream() {
-        return downstream;
+        return upstream;
     }
 
     @Override
@@ -85,7 +86,47 @@ public class G2UpstreamProxyFibre extends SimpleChannelInboundHandler<IRCLine> i
         }
     }
 
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        if (downstream != null && downstream.getDownstream().isOpen()) {
+            downstream.writeAndFlush(IRCLine.proxyNotice("Lost connection to server!"));
+            downstream.getDownstream().close();
+        }
+    }
+
     public static interface Factory {
-        G2UpstreamProxyFibre create(G2DownstreamProxyFibre downstreamFibre);
+        G2UpstreamProxyFibre create(G2DownstreamProxyFibre downstreamFibre, boolean ssl);
+    }
+
+    public static class Initializer extends ChannelInitializer<Channel> {
+
+        private final G2DownstreamProxyFibre downstreamFibre;
+        private final boolean ssl;
+        private Logger logger;
+        private Factory factory;
+        private G2UpstreamProxyFibre fibre;
+
+        public Initializer(G2DownstreamProxyFibre downstreamFibre, boolean ssl, Logger logger, G2UpstreamProxyFibre.Factory factory) {
+            this.downstreamFibre = downstreamFibre;
+            this.ssl = ssl;
+            this.logger = logger;
+            this.factory = factory;
+        }
+
+        @Override
+        protected void initChannel(Channel ch) throws Exception {
+            ch.pipeline()
+                    .addLast("irc_enc", new IRCEncoder())
+                    .addLast("str_enc", new StringEncoder())
+                    .addLast("line_dec", new LineBasedFrameDecoder(1024))
+                    .addLast("str_dec", new StringDecoder())
+                    .addLast("irc_dec", new IRCDecoder())
+                    .addLast("upstream", this.fibre = factory.create(downstreamFibre, ssl));
+            if (ssl) {
+                ch.pipeline().addBefore("line_dec", "ssl", sslContext.newHandler(ch.alloc()));
+                logger.trace("Installed SSL handler!");
+            }
+            downstreamFibre.setUpstream(fibre);
+        }
     }
 }
