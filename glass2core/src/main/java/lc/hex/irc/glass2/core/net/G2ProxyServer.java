@@ -60,19 +60,13 @@ public class G2ProxyServer extends ChannelInitializer<SocketChannel> implements 
     @Override
     protected void initChannel(SocketChannel ch) throws Exception {
         logger.trace("Initializing socket channel " + ch.remoteAddress().getHostName());
-        ch.pipeline().addLast("frame_dec", new LineBasedFrameDecoder(1024))
+        ch.pipeline()
+                .addLast("irc_enc", new IRCEncoder())
+                .addLast("str_enc", new StringEncoder())
+                .addLast("frame_dec", new LineBasedFrameDecoder(1024))
                 .addLast("str_dec", new StringDecoder())
                 .addLast("irc_dec", new IRCDecoder())
-                .addLast("irc_hlr", new G2DownstreamProxyFibre(logger, this, eventBus, factory))
-                .addLast("irc_enc", new IRCEncoder())
-                .addLast(new ChannelOutboundHandlerAdapter() {
-                    @Override
-                    public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
-                        System.out.println(msg.getClass().getName() + " " + msg);
-                        super.write(ctx, msg.toString(), promise);
-                    }
-                })
-                .addLast("str_enc", new StringEncoder());
+                .addLast("irc_hlr", new G2DownstreamProxyFibre(logger, this, eventBus, factory));
         logger.trace("Established pipeline for channel " + ch.remoteAddress().getHostName());
     }
 
