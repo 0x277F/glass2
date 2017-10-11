@@ -69,6 +69,11 @@ public class G2DownstreamProxyFibre extends ChannelInboundHandlerAdapter impleme
         return upstream.getUpstream();
     }
 
+    @Override
+    public boolean isConnected() {
+        return upstream != null;
+    }
+
     public void setUpstream(G2UpstreamProxyFibre fibre) {
         this.upstream = fibre;
     }

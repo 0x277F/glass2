@@ -63,12 +63,21 @@ public class G2ProxyServer extends ChannelInitializer<SocketChannel> implements 
     @Override
     protected void initChannel(SocketChannel ch) throws Exception {
         logger.trace("Initializing socket channel " + ch.remoteAddress().getHostName());
+        // Okay, so listen. Apparently, the IRC encoder has to follow the String encoder in the pipeline because once
+        // the message reaches the tail of the pipeline, it's actually repropagated _backwards_ through the pipeline,
+        // meaning that in order to pass through the String encoder it has to be encoded from an IRCLine to a String first.
+        // Imagine, for a moment, if you're trying to do a shot of absinthe to make you forget about this back-asswards
+        // pipeline logic. Now, once it reaches your liver, your liver actually vomits the absinthe back up and it flies
+        // straight out of your mouth. You might not call this a rousing success, but Netty sure does.
+        // If you think this makes absolutely no sense and should probably be documented somewhere, you're right. Either
+        // way, that's why the pipeline is backwards.
+        // Thanks to https://github.com/LordAkkarin for figuring this one out.
         ch.pipeline()
                 .addLast("frame_dec", new LineBasedFrameDecoder(1024))
                 .addLast("str_dec", new StringDecoder(StandardCharsets.UTF_8))
                 .addLast("irc_dec", new IRCDecoder())
-                .addLast("irc_enc", new IRCEncoder())
                 .addLast("str_enc", new StringEncoder(StandardCharsets.UTF_8))
+                .addLast("irc_enc", new IRCEncoder())
                 .addLast("irc_cli", downstreamProvider.get());
         logger.trace("Established pipeline for channel " + ch.remoteAddress().getHostName());
     }

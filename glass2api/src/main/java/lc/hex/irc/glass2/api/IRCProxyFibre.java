@@ -14,4 +14,6 @@ public interface IRCProxyFibre {
     Channel getDownstream();
 
     Channel getUpstream();
+
+    boolean isConnected();
 }

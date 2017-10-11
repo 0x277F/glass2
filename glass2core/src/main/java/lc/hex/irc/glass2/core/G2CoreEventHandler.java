@@ -29,7 +29,7 @@ public class G2CoreEventHandler {
         IRCLine line = event.getLine();
         logger.trace("start processing downstream: " + event.getLine().toString());
         G2DownstreamProxyFibre fibre = ((G2DownstreamProxyFibre) event.getFibre());
-        if (line.getCommand().equalsIgnoreCase("PASS")) {
+        if (!fibre.isConnected() && line.getCommand().equalsIgnoreCase("PASS")) {
             String[] split = event.getLine().getParams().get(0).split(AUTH_DELIM);
             if (split.length < 2) {
                 fibre.writeAndFlush(IRCLine.proxyNotice("Insufficient parameters to PASS:"));

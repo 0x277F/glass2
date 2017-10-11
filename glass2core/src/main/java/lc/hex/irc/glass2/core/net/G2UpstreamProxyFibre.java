@@ -81,6 +81,11 @@ public class G2UpstreamProxyFibre extends ChannelInboundHandlerAdapter implement
     }
 
     @Override
+    public boolean isConnected() {
+        return downstream != null;
+    }
+
+    @Override
     public void channelRead(ChannelHandlerContext ctx, Object raw) throws Exception {
         IRCLine msg = (IRCLine) raw;
         eventBus.post(new IRCMessageEvent.Clientbound(msg, this));
@@ -120,14 +125,14 @@ public class G2UpstreamProxyFibre extends ChannelInboundHandlerAdapter implement
         @Override
         protected void initChannel(Channel ch) throws Exception {
             ch.pipeline()
-                    .addLast("irc_enc", new IRCEncoder())
-                    .addLast("str_enc", new StringEncoder(StandardCharsets.UTF_8))
                     .addLast("line_dec", new LineBasedFrameDecoder(1024))
                     .addLast("str_dec", new StringDecoder(StandardCharsets.UTF_8))
                     .addLast("irc_dec", new IRCDecoder())
+                    .addLast("str_enc", new StringEncoder(StandardCharsets.UTF_8))
+                    .addLast("irc_enc", new IRCEncoder())
                     .addLast("upstream", this.fibre = factory.create(downstreamFibre, ssl));
             if (ssl) {
-                ch.pipeline().addBefore("line_dec", "ssl", sslContext.newHandler(ch.alloc()));
+                ch.pipeline().addBefore("str_enc", "ssl", sslContext.newHandler(ch.alloc()));
                 logger.trace("Installed SSL handler!");
             }
             downstreamFibre.setUpstream(fibre);
