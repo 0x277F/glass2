@@ -1,10 +1,7 @@
 package lc.hex.irc.glass2.core.net;
 
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOutboundHandlerAdapter;
-import io.netty.channel.ChannelPromise;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
@@ -17,7 +14,9 @@ import lc.hex.irc.glass2.core.G2CoreEventHandler;
 import org.apache.logging.log4j.Logger;
 
 import javax.inject.Inject;
+import javax.inject.Provider;
 import javax.inject.Singleton;
+import java.nio.charset.StandardCharsets;
 
 @Singleton
 public class G2ProxyServer extends ChannelInitializer<SocketChannel> implements ProxyServer, Runnable {
@@ -25,12 +24,16 @@ public class G2ProxyServer extends ChannelInitializer<SocketChannel> implements 
     private Logger logger;
     private EventBus eventBus;
     private G2UpstreamProxyFibre.Factory factory;
+    private final G2CoreEventHandler eventHandler;
+    private final Provider<G2DownstreamProxyFibre> downstreamProvider;
 
     @Inject
-    public G2ProxyServer(Logger logger, EventBus eventBus, G2UpstreamProxyFibre.Factory factory, G2CoreEventHandler eventHandler) {
+    public G2ProxyServer(Logger logger, EventBus eventBus, G2UpstreamProxyFibre.Factory factory, G2CoreEventHandler eventHandler, Provider<G2DownstreamProxyFibre> downstreamProvider) {
         this.logger = logger;
         this.eventBus = eventBus;
         this.factory = factory;
+        this.eventHandler = eventHandler;
+        this.downstreamProvider = downstreamProvider;
         this.serverLoop = new NioEventLoopGroup(1);
         this.childLoop = new NioEventLoopGroup(4);
         eventBus.subscribe(eventHandler);
@@ -61,12 +64,12 @@ public class G2ProxyServer extends ChannelInitializer<SocketChannel> implements 
     protected void initChannel(SocketChannel ch) throws Exception {
         logger.trace("Initializing socket channel " + ch.remoteAddress().getHostName());
         ch.pipeline()
-                .addLast("irc_enc", new IRCEncoder())
-                .addLast("str_enc", new StringEncoder())
                 .addLast("frame_dec", new LineBasedFrameDecoder(1024))
-                .addLast("str_dec", new StringDecoder())
+                .addLast("str_dec", new StringDecoder(StandardCharsets.UTF_8))
                 .addLast("irc_dec", new IRCDecoder())
-                .addLast("irc_hlr", new G2DownstreamProxyFibre(logger, this, eventBus, factory));
+                .addLast("irc_enc", new IRCEncoder())
+                .addLast("str_enc", new StringEncoder(StandardCharsets.UTF_8))
+                .addLast("irc_cli", downstreamProvider.get());
         logger.trace("Established pipeline for channel " + ch.remoteAddress().getHostName());
     }
 

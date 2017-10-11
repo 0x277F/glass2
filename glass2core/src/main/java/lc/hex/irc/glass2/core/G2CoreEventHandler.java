@@ -25,35 +25,33 @@ public class G2CoreEventHandler {
     }
 
     @Subscribe
-    public void onInboundDownstreamMessage(IRCMessageEvent.Inbound event) {
+    public void onInboundDownstreamMessage(IRCMessageEvent.Serverbound event) {
         IRCLine line = event.getLine();
-        if (event.getSide() == IRCMessageEvent.Side.DOWNSTREAM) {
-            logger.trace("start processing downstream: " + event.getLine().toString());
-            G2DownstreamProxyFibre fibre = ((G2DownstreamProxyFibre) event.getFibre());
-            if (line.getCommand().equalsIgnoreCase("PASS")) {
-                String[] split = event.getLine().getParams().get(0).split(AUTH_DELIM);
-                if (split.length < 2) {
-                    fibre.writeAndFlush(IRCLine.proxyNotice("Insufficient parameters to PASS:"));
-                    fibre.writeAndFlush(IRCLine.proxyNotice("PASS: usage: /PASS <server> [+]<port> <pass> with spaces representing unit separators."));
+        logger.trace("start processing downstream: " + event.getLine().toString());
+        G2DownstreamProxyFibre fibre = ((G2DownstreamProxyFibre) event.getFibre());
+        if (line.getCommand().equalsIgnoreCase("PASS")) {
+            String[] split = event.getLine().getParams().get(0).split(AUTH_DELIM);
+            if (split.length < 2) {
+                fibre.writeAndFlush(IRCLine.proxyNotice("Insufficient parameters to PASS:"));
+                fibre.writeAndFlush(IRCLine.proxyNotice("PASS: usage: /PASS <server> [+]<port> <pass> with spaces representing unit separators."));
+            } else {
+                String host = split[0];
+                boolean ssl = false;
+                int port;
+                if (split[1].startsWith("+")) {
+                    ssl = true;
+                    port = Integer.parseInt(split[1].substring(1));
                 } else {
-                    String host = split[0];
-                    boolean ssl = false;
-                    int port;
-                    if (split[1].startsWith("+")) {
-                        ssl = true;
-                        port = Integer.parseInt(split[1].substring(1));
-                    } else {
-                        port = Integer.parseInt(split[1]);
-                    }
-                    if (split.length == 3) {
-                        pass = split[2];
-                    }
-                    fibre.synchronizeUpstream(host, port, ssl).addListener((ChannelFutureListener) f -> {
-                        if (f.isSuccess() && pass != null) {
-                            f.channel().writeAndFlush(new IRCLine().read("PASS " + pass));
-                        }
-                    });
+                    port = Integer.parseInt(split[1]);
                 }
+                if (split.length == 3) {
+                    pass = split[2];
+                }
+                fibre.synchronizeUpstream(host, port, ssl).addListener((ChannelFutureListener) f -> {
+                    if (f.isSuccess() && pass != null) {
+                        f.channel().writeAndFlush(new IRCLine().read("PASS " + pass));
+                    }
+                });
             }
         }
     }

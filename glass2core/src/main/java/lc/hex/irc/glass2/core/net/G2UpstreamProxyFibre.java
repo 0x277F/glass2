@@ -3,8 +3,8 @@ package lc.hex.irc.glass2.core.net;
 import com.google.inject.assistedinject.Assisted;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelInitializer;
-import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.LineBasedFrameDecoder;
 import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
@@ -13,12 +13,14 @@ import io.netty.handler.ssl.SslContextBuilder;
 import lc.hex.irc.glass2.api.IRCLine;
 import lc.hex.irc.glass2.api.IRCProxyFibre;
 import lc.hex.irc.glass2.api.event.EventBus;
+import lc.hex.irc.glass2.api.event.IRCMessageEvent;
 import org.apache.logging.log4j.Logger;
 
 import javax.inject.Inject;
 import javax.net.ssl.SSLException;
+import java.nio.charset.StandardCharsets;
 
-public class G2UpstreamProxyFibre extends SimpleChannelInboundHandler<IRCLine> implements IRCProxyFibre {
+public class G2UpstreamProxyFibre extends ChannelInboundHandlerAdapter implements IRCProxyFibre {
 
     private Logger logger;
     private EventBus eventBus;
@@ -79,9 +81,11 @@ public class G2UpstreamProxyFibre extends SimpleChannelInboundHandler<IRCLine> i
     }
 
     @Override
-    protected void channelRead0(ChannelHandlerContext ctx, IRCLine msg) throws Exception {
+    public void channelRead(ChannelHandlerContext ctx, Object raw) throws Exception {
+        IRCLine msg = (IRCLine) raw;
+        eventBus.post(new IRCMessageEvent.Clientbound(msg, this));
         if (downstream != null) {
-            logger.trace("<-- " + msg.toString());
+            logger.trace("<--S " + msg.toString());
             downstream.writeAndFlush(msg);
         }
     }
@@ -117,9 +121,9 @@ public class G2UpstreamProxyFibre extends SimpleChannelInboundHandler<IRCLine> i
         protected void initChannel(Channel ch) throws Exception {
             ch.pipeline()
                     .addLast("irc_enc", new IRCEncoder())
-                    .addLast("str_enc", new StringEncoder())
+                    .addLast("str_enc", new StringEncoder(StandardCharsets.UTF_8))
                     .addLast("line_dec", new LineBasedFrameDecoder(1024))
-                    .addLast("str_dec", new StringDecoder())
+                    .addLast("str_dec", new StringDecoder(StandardCharsets.UTF_8))
                     .addLast("irc_dec", new IRCDecoder())
                     .addLast("upstream", this.fibre = factory.create(downstreamFibre, ssl));
             if (ssl) {

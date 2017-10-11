@@ -5,8 +5,8 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.handler.codec.MessageToMessageCodec;
 import lc.hex.irc.glass2.api.IRCLine;
 import lc.hex.irc.glass2.api.IRCProxyFibre;
 import lc.hex.irc.glass2.api.event.EventBus;
@@ -14,9 +14,8 @@ import lc.hex.irc.glass2.api.event.IRCMessageEvent;
 import org.apache.logging.log4j.Logger;
 
 import javax.inject.Inject;
-import java.util.List;
 
-public class G2DownstreamProxyFibre extends MessageToMessageCodec<IRCLine, IRCLine> implements IRCProxyFibre {
+public class G2DownstreamProxyFibre extends ChannelInboundHandlerAdapter implements IRCProxyFibre {
 
     private Logger logger;
     private G2ProxyServer proxyServer;
@@ -35,7 +34,7 @@ public class G2DownstreamProxyFibre extends MessageToMessageCodec<IRCLine, IRCLi
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        super.handlerAdded(ctx);
+        super.channelActive(ctx);
         this.downstream = ctx.channel();
         logger.trace("channelActive");
     }
@@ -61,21 +60,6 @@ public class G2DownstreamProxyFibre extends MessageToMessageCodec<IRCLine, IRCLi
     }
 
     @Override
-    protected void encode(ChannelHandlerContext ctx, IRCLine msg, List<Object> out) throws Exception {
-        eventBus.post(new IRCMessageEvent.Outbound(IRCMessageEvent.Side.DOWNSTREAM, msg, this));
-        out.add(msg);
-    }
-
-    @Override
-    protected void decode(ChannelHandlerContext ctx, IRCLine msg, List<Object> out) throws Exception {
-        eventBus.post(new IRCMessageEvent.Inbound(IRCMessageEvent.Side.DOWNSTREAM, msg, this));
-        if (upstream != null) {
-            logger.trace("--> " + msg.toString());
-            upstream.writeAndFlush(msg);
-        }
-    }
-
-    @Override
     public Channel getDownstream() {
         return downstream;
     }
@@ -93,6 +77,15 @@ public class G2DownstreamProxyFibre extends MessageToMessageCodec<IRCLine, IRCLi
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         if (upstream != null && upstream.getUpstream().isOpen()) {
             upstream.getUpstream().close();
+        }
+    }
+
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object raw) throws Exception {
+        IRCLine msg = (IRCLine) raw;
+        eventBus.post(new IRCMessageEvent.Serverbound(msg, this));
+        if (upstream != null) {
+            upstream.writeAndFlush(msg);
         }
     }
 

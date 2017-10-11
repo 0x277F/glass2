@@ -5,12 +5,10 @@ import lc.hex.irc.glass2.api.IRCProxyFibre;
 
 public class IRCMessageEvent implements Event {
     private IRCLine line;
-    private Side side;
     private IRCProxyFibre fibre;
 
-    public IRCMessageEvent(Side side, IRCLine line, IRCProxyFibre fibre) {
+    public IRCMessageEvent(IRCLine line, IRCProxyFibre fibre) {
         this.line = line;
-        this.side = side;
         this.fibre = fibre;
     }
 
@@ -22,29 +20,21 @@ public class IRCMessageEvent implements Event {
         this.line = line;
     }
 
-    public Side getSide() {
-        return side;
-    }
-
     public IRCProxyFibre getFibre() {
         return fibre;
     }
 
-    public enum Side {
-        UPSTREAM, DOWNSTREAM
-    }
+    public static class Clientbound extends IRCMessageEvent {
 
-    public static class Inbound extends IRCMessageEvent {
-
-        public Inbound(Side side, IRCLine line, IRCProxyFibre fibre) {
-            super(side, line, fibre);
+        public Clientbound(IRCLine line, IRCProxyFibre fibre) {
+            super(line, fibre);
         }
     }
 
-    public static class Outbound extends IRCMessageEvent {
+    public static class Serverbound extends IRCMessageEvent {
 
-        public Outbound(Side side, IRCLine line, IRCProxyFibre fibre) {
-            super(side, line, fibre);
+        public Serverbound(IRCLine line, IRCProxyFibre fibre) {
+            super(line, fibre);
         }
     }
 }
